@@ -1,4 +1,4 @@
-import { Console, Effect, Clock, Layer, Context, Array } from "effect";
+import { Console, Effect, Clock, Layer, Context, Array, Stream } from "effect";
 
 import { BunContext, BunRuntime } from "@effect/platform-bun";
 import { FileSystem, Terminal } from "@effect/platform";
@@ -11,7 +11,14 @@ import {
   VectorStoreIndex,
   Ollama,
   Settings,
+  ContextChatEngine,
+  Response,
+  storageContextFromDefaults,
 } from "llamaindex";
+import { UnknownException } from "effect/Cause";
+import { LlamaIndex } from "./LLamaIndexService";
+import { LlamaChatService, LlamaChatServiceLive } from "./LlamaChatService";
+import { p } from "@effect/cli/HelpDoc";
 
 const configureOllama = Effect.try(() => {
   const ollama = new Ollama({
@@ -21,6 +28,8 @@ const configureOllama = Effect.try(() => {
 
   Settings.llm = ollama;
   Settings.embedModel = ollama;
+
+  console.log("Ollama configured");
 });
 
 const program = (path: string) =>
@@ -29,28 +38,46 @@ const program = (path: string) =>
     const fs = yield* FileSystem.FileSystem;
 
     // TODO: this should be configurable
-    yield* configureOllama
+    yield* configureOllama;
 
     yield* Console.log(`Loading the document at ${path}`);
     const text = yield* fs.readFileString(path);
     const document = new Document({ text, id_: path });
 
+    const storageContext = yield* Effect.tryPromise(() =>
+      storageContextFromDefaults({
+        persistDir: "./storage",
+      })
+    );
+
+    // TODO: move to service
     yield* Console.log(`Creating embeddings`);
     const index = yield* Effect.tryPromise(() =>
-      VectorStoreIndex.fromDocuments([document])
+      VectorStoreIndex.fromDocuments([document], { storageContext })
     );
 
-    const queryEngine = index.asQueryEngine();
-
-    const ask = (query: string) =>
-      Effect.tryPromise(() => queryEngine.query({ query }));
-
-    yield* Console.log(`Please provide your query`);
-    yield* tty.readLine.pipe(
-      Effect.andThen(ask),
-      Effect.andThen(res => Console.log(`>> ${res.response}`)),
-      Effect.forever
+    const program = LlamaChatService.pipe(
+      Effect.andThen((chatService) => {
+        return tty.display(`Q: `).pipe(
+          Effect.andThen(tty.readLine),
+          Effect.tap(tty.display(`A: `)),
+          Effect.andThen((question) =>
+            chatService.ask(question).pipe(
+              Stream.map((res) => res.response),
+              Stream.tap(tty.display),
+              Stream.runDrain
+            )
+          ),
+          Effect.tap(tty.display(`\n`)),
+          Effect.forever
+        );
+      })
     );
+
+    const indexLive = Layer.succeed(LlamaIndex, index);
+    const chatLive = LlamaChatServiceLive.pipe(Layer.provide(indexLive));
+
+    yield* Effect.provide(program, chatLive);
   });
 
 const docPath = Args.text({ name: "docPath" }).pipe(Args.atMost(1));
