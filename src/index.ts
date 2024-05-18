@@ -1,70 +1,54 @@
-import { Console, Effect, Clock, Layer, Context, Array, Stream } from "effect";
-
+import { Console, Effect, Layer, Array, Stream } from "effect";
 import { BunContext, BunRuntime } from "@effect/platform-bun";
-import { FileSystem, Terminal } from "@effect/platform";
-import { Args, Command, Options } from "@effect/cli";
+import { Terminal } from "@effect/platform";
+import { Args, Command } from "@effect/cli";
 
 import {
-  Document,
-  MetadataMode,
-  type NodeWithScore,
-  VectorStoreIndex,
-  Ollama,
-  Settings,
-  ContextChatEngine,
-  Response,
-  storageContextFromDefaults,
-} from "llamaindex";
-import { LlamaIndex, LlamaIndexService, LlamaPersistedIndexServiceLive } from "./LLamaIndexService";
+  LlamaIndex,
+  LlamaIndexService,
+  LlamaPersistedIndexServiceLive,
+} from "./LLamaIndexService";
 import { LlamaChatService, LlamaChatServiceLive } from "./LlamaChatService";
+import { configureOllama } from "./LLMConfig";
+import {
+  DocumentLoaderService,
+  DocumentLoaderServiceLive,
+} from "./DocumentLoaderService";
 
-const configureOllama = Effect.try(() => {
-  const ollama = new Ollama({
-    model: "llama3",
-    config: { temperature: 0.75 },
-  });
+const repl = Effect.gen(function* () {
+  const chatService = yield* LlamaChatService;
+  const tty = yield* Terminal.Terminal;
 
-  Settings.llm = ollama;
-  Settings.embedModel = ollama;
+  yield* tty.display(`Q: `).pipe(
+    Effect.andThen(tty.readLine),
+    Effect.tap(tty.display(`A: `)),
+    Effect.andThen((question) =>
+      chatService.ask(question).pipe(
+        Stream.map((res) => res.response),
+        Stream.tap(tty.display),
+        Stream.runDrain
+      )
+    ),
+    Effect.tap(tty.display(`\n`)),
+    Effect.forever
+  );
 });
 
 const program = (path: string) =>
   Effect.gen(function* () {
-    const program = LlamaChatService.pipe(
-      Effect.andThen((chatService) => 
-        tty.display(`Q: `).pipe(
-          Effect.andThen(tty.readLine),
-          Effect.tap(tty.display(`A: `)),
-          Effect.andThen((question) =>
-            chatService.ask(question).pipe(
-              Stream.map((res) => res.response),
-              Stream.tap(tty.display),
-              Stream.runDrain
-            )
-          ),
-          Effect.tap(tty.display(`\n`)),
-          Effect.forever
-        )
-      )
-    );
+    const docLoader = yield* DocumentLoaderService;
 
-    const tty = yield* Terminal.Terminal;
-    const fs = yield* FileSystem.FileSystem;
+    const documents = yield* docLoader.loadDocuments(path);
 
-    // TODO: this should be configurable
     yield* configureOllama;
-
-    yield* Console.log(`Loading the document at ${path}`);
-    const text = yield* fs.readFileString(path);
-    const document = new Document({ text, id_: path });
-
-    const indexService = yield* LlamaIndexService
-    const index = yield* indexService.createOrLoadIndex(document)
+    const index = yield* LlamaIndexService.pipe(
+      Effect.andThen((service) => service.createOrLoadIndex(...documents))
+    );
 
     const indexLive = Layer.succeed(LlamaIndex, index);
     const chatLive = LlamaChatServiceLive.pipe(Layer.provide(indexLive));
 
-    yield* Effect.provide(program, chatLive);
+    yield* Effect.provide(repl, chatLive);
   });
 
 const docPath = Args.text({ name: "docPath" }).pipe(Args.atMost(1));
@@ -80,12 +64,13 @@ const cli = Command.run(command, {
   version: "0.0.1",
 });
 
+// bun run ./src/index.ts ./node_modules/llamaindex/examples/abramov.txt
+// bun run ./src/index.ts ./local_examples/rust-in-action.pdf
+
 Effect.suspend(() => cli(process.argv)).pipe(
   Effect.provide(
-    Layer.merge(
-      BunContext.layer,
-      LlamaPersistedIndexServiceLive
-    )
+    Layer.mergeAll(LlamaPersistedIndexServiceLive, DocumentLoaderServiceLive)
   ),
+  Effect.provide(BunContext.layer),
   BunRuntime.runMain
 );

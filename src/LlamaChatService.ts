@@ -1,6 +1,6 @@
 import { Effect, Layer, Context, Stream } from "effect";
 import { UnknownException } from "effect/Cause";
-import { Settings, ContextChatEngine, Response } from "llamaindex";
+import { Settings, ContextChatEngine, Response, Ollama } from "llamaindex";
 
 import { LlamaIndex } from "./LLamaIndexService";
 
@@ -15,17 +15,18 @@ export class LlamaChatService extends Context.Tag("LlamaChatService")<
 
 export const LlamaChatServiceLive = Layer.effect(
   LlamaChatService,
-  LlamaIndex.pipe(
-    Effect.andThen((index) =>
-      Effect.try(
-        () =>
-          new ContextChatEngine({
-            retriever: index.asRetriever({ similarityTopK: 5 }),
-            chatModel: Settings.llm, // global (!)
-          })
-      )
-    ),
-    Effect.andThen((chatEngine) => ({
+  Effect.gen(function* () {
+    const index = yield* LlamaIndex;
+
+    const chatEngine = yield* Effect.try(
+      () =>
+        new ContextChatEngine({
+          retriever: index.asRetriever({ similarityTopK: 5 }),
+          chatModel: Settings.llm, // global (!)
+        })
+    );
+
+    return {
       ask: (message: string): ChatResponse =>
         Stream.fromEffect(
           Effect.tryPromise(() => chatEngine.chat({ message, stream: true }))
@@ -37,6 +38,6 @@ export const LlamaChatServiceLive = Layer.effect(
             )
           )
         ),
-    }))
-  )
+    };
+  })
 );

@@ -3,7 +3,8 @@
   "module": "src/index.ts",
   "type": "module",
   "devDependencies": {
-    "@types/bun": "latest"
+    "@types/bun": "latest",
+    "@types/pdf-parse": "^1.1.4"
   },
   "peerDependencies": {
     "typescript": "^5.0.0"
@@ -12,6 +13,7 @@
     "@effect/cli": "^0.36.24",
     "@effect/platform-bun": "^0.34.10",
     "effect": "^3.1.4",
-    "llamaindex": "^0.3.10"
+    "llamaindex": "^0.3.10",
+    "pdf-parse": "^1.1.1"
   }
 }

@@ -16,7 +16,7 @@ export class LlamaIndexService extends Context.Tag("LlamaIndex")<
   LlamaIndexService,
   {
     readonly createOrLoadIndex: (
-      doc: Document
+      ...docs: Document[]
     ) => Effect.Effect<VectorStoreIndex, UnknownException>;
   }
 >() {}
@@ -31,12 +31,13 @@ export const LlamaPersistedIndexServiceLive = Layer.effect(
 
     return {
       createOrLoadIndex: (
-        document: Document
+        ...docs: Document[]
       ): Effect.Effect<VectorStoreIndex, UnknownException> =>
-        Console.log(`Creating embeddings`).pipe(
+        // TODO: measure duration
+        Console.log(`Creating or loading embeddings`).pipe(
           Effect.andThen(() =>
             Effect.tryPromise(() =>
-              VectorStoreIndex.fromDocuments([document], { storageContext })
+              VectorStoreIndex.fromDocuments(docs, { storageContext })
             )
           )
         ),
