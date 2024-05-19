@@ -1,35 +1,35 @@
-import { expect, test, describe } from "bun:test";
-import { FileSystem } from "@effect/platform";
-import { Effect, Layer } from "effect";
-import {
-  DocumentLoaderService,
-  DocumentLoaderServiceLive,
-} from "./DocumentLoaderService";
+import { expect, test, describe } from 'bun:test'
+import { FileSystem } from '@effect/platform'
+import { Effect, Layer } from 'effect'
+import { DocumentLoaderService, DocumentLoaderServiceLive } from './DocumentLoaderService'
+import { BunContext } from '@effect/platform-bun'
 
-describe("DocumentLoaderService", () => {
-  test("loadDocuments works correctly with PDFs", () => {
-    const docLayer = DocumentLoaderServiceLive.pipe(
-      Layer.provide(fsWithLoadedFileAt("./resources/test-slide.pdf"))
-    );
-
+describe('DocumentLoaderService', () => {
+  test('loadDocuments works correctly with one PDF', () => {
     const testProgram = Effect.gen(function* () {
-      const docLoader = yield* DocumentLoaderService;
-      const documents = yield* docLoader.loadDocuments("test.pdf");
+      const docLoader = yield* DocumentLoaderService
+      const documents = yield* docLoader.loadDocuments('./resources/test-slide.pdf')
 
-      expect(documents.length).toBe(1);
-      expect(documents[0].id_).toBe("test.pdf");
-      expect(documents[0].text).toBe("\n\nNothing interesting here");
-    });
+      expect(documents.length).toBe(1)
+      expect(documents[0].text).toBe('\n\nNothing interesting here')
+    })
 
-    return Effect.provide(testProgram, docLayer).pipe(Effect.runPromise);
-  });
+    return runTest(testProgram)
+  })
 
-  const fsWithLoadedFileAt = (path: string) =>
-    FileSystem.layerNoop({
-      readFile: (path: string) =>
-        // assuming this will always succeed
-        Effect.promise(() => Bun.file(path).arrayBuffer()).pipe(
-          Effect.andThen((arrBuffer) => new Uint8Array(arrBuffer))
-        ),
-    });
-});
+  test('loadDocuments works correctly with folder of PDFs', () => {
+    const testProgram = Effect.gen(function* () {
+      const docLoader = yield* DocumentLoaderService
+      const documents = yield* docLoader.loadDocuments('./resources')
+
+      expect(documents.length).toBe(2)
+      expect(documents[1].text).toBe('\n\nNothing interesting here')
+      expect(documents[0].text).toBe('\n\nNothing interesting here')
+    })
+
+    return runTest(testProgram)
+  })
+
+  const runTest = <A, E>(testProgram: Effect.Effect<A, E, DocumentLoaderService>) =>
+    Effect.provide(testProgram, DocumentLoaderServiceLive.pipe(Layer.provide(BunContext.layer))).pipe(Effect.runPromise)
+})

@@ -1,6 +1,11 @@
 # extrospection
 
-To install dependencies:
+A toy AI RAG tool for chatting with your documents. Made with [LLamaIndex](https://www.llamaindex.ai/) and [Effect.ts](https://effect.website/).
+
+Supports only PDF and it's hardcoded to use Ollama with lama3 for both embeddings and chat.
+
+
+## Setup
 
 ```bash
 bun install
@@ -9,7 +14,6 @@ bun install
 To run:
 
 ```bash
-bun run index.ts
+bun run ./src/index.ts ./your-book.pdf
+# it will create an vector index in ./storage
 ```
-
-This project was created using `bun init` in bun v1.1.8. [Bun](https://bun.sh) is a fast all-in-one JavaScript runtime.
